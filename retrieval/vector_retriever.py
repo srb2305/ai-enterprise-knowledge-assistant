@@ -5,6 +5,7 @@
 import psycopg2
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
+import asyncio
 
 class VectorStore:
 	def __init__(self, db_url, model_name="all-MiniLM-L6-v2"):
@@ -62,3 +63,21 @@ class VectorStore:
 		)
 		results = cur.fetchall()
 		return [(row[0], 1 - row[2], row[1]) for row in results]  # similarity = 1 - distance
+
+	async def query_async(self, query_text, top_k=5):
+		# Async wrapper for query (for HybridRetriever)
+		loop = asyncio.get_event_loop()
+		return await loop.run_in_executor(None, self.query, query_text, top_k)
+
+	def get_chunk_text(self, chunk_id):
+		"""
+		Retrieves a chunk by its ID.
+		Args:
+			chunk_id: The ID of the chunk.
+		Returns:
+			The chunk text if found, None otherwise.
+		"""
+		cur = self.conn.cursor()
+		cur.execute("SELECT chunk FROM documents WHERE id = %s", (chunk_id,))
+		row = cur.fetchone()
+		return row[0] if row else None

@@ -3,6 +3,7 @@
 
 from graph.entity_extractor import EntityExtractor
 from graph.graph_store import GraphStore
+import asyncio
 
 class GraphRetriever:
 	def __init__(self, neo4j_uri, neo4j_user, neo4j_password):
@@ -27,3 +28,16 @@ class GraphRetriever:
 					if n.get('chunk_id'):
 						chunk_ids.add(n['chunk_id'])
 		return list(chunk_ids)
+
+	async def retrieve_async(self, query, hops=2):
+		"""
+		Extracts entities from the query, finds neighbors in Neo4j, and returns linked chunk IDs.
+		Args:
+			query: User query string
+			hops: Number of hops for neighbor search
+		Returns:
+			List of chunk IDs (and optionally entity info)
+		"""
+		import asyncio
+		loop = asyncio.get_event_loop()
+		return await loop.run_in_executor(None, self.retrieve, query, hops)
