@@ -54,7 +54,7 @@ class VectorStore:
 		query_emb = self.model.encode(query_text)
 		cur.execute(
 			"""
-			SELECT chunk, metadata, embedding <#> %s AS distance
+			SELECT chunk, metadata, embedding <#> %s::vector AS distance
 			FROM documents
 			ORDER BY distance ASC
 			LIMIT %s
