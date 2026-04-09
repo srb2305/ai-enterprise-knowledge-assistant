@@ -9,6 +9,9 @@ import tempfile
 from ingestion.pipeline import ingest_document
 from retrieval.vector_retriever import VectorStore
 from retrieval.graph_retriever import GraphRetriever
+from graph.graph_store import GraphStore
+import glob
+import json
 from retrieval.hybrid_retriever import HybridRetriever
 
 # Update this with your actual PostgreSQL connection string
@@ -24,6 +27,35 @@ graph_retriever = GraphRetriever(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
 hybrid_retriever = HybridRetriever(PGVECTOR_URL, NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
 
 app = FastAPI()
+
+# For direct graph access (neighbors)
+graph_store = GraphStore(NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD)
+@app.get("/graph/neighbours/{entity}")
+async def get_graph_neighbours(entity: str, hops: int = 2):
+	"""
+	Returns neighbors of an entity up to N hops for visualization.
+	"""
+	neighbours = graph_store.get_neighbors(entity, hops=hops)
+	return JSONResponse({"entity": entity, "neighbours": neighbours})
+
+
+# Simple latest eval results endpoint (looks for latest .json in evaluation/ or returns empty)
+@app.get("/eval/latest")
+async def get_latest_eval():
+	"""
+	Returns the latest evaluation results (expects .json files in evaluation/).
+	"""
+	eval_files = sorted(glob.glob(os.path.join("evaluation", "*.json")), reverse=True)
+	for f in eval_files:
+		if f.endswith("golden_dataset.json"):
+			continue  # skip golden dataset
+		try:
+			with open(f, "r", encoding="utf-8") as file:
+				data = json.load(file)
+			return JSONResponse({"filename": os.path.basename(f), "results": data})
+		except Exception as e:
+			continue
+	return JSONResponse({"results": []})
 
 @app.post("/ingest")
 async def ingest(file: UploadFile = File(...)):

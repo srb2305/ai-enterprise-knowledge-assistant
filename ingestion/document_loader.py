@@ -12,10 +12,13 @@ import os
 def load_document(file_path):
 	"""
 	Loads a document from the given file path using the appropriate LangChain loader.
-	Supports PDF, DOCX, and TXT files.
+	Supports PDF, DOCX, and TXT files. If extension is missing or unknown, tries to treat as text.
 	Returns a list of document objects (one per page or chunk, depending on loader).
 	"""
 	ext = os.path.splitext(file_path)[1].lower()
+	# If extension is missing, try to guess or treat as text
+	if not ext:
+		ext = ".txt"
 	if ext == ".pdf":
 		if UnstructuredPDFLoader is None:
 			raise ImportError("unstructured package required for PDF loading: pip install unstructured")
@@ -25,5 +28,10 @@ def load_document(file_path):
 	elif ext == ".txt":
 		loader = TextLoader(file_path)
 	else:
-		raise ValueError(f"Unsupported file type: {ext}")
+		# Try to treat as text if unknown extension
+		try:
+			loader = TextLoader(file_path)
+		except Exception as e:
+			print(f"[WARN] Unsupported file type: {ext}. Error: {e}")
+			raise ValueError(f"Unsupported file type: {ext}")
 	return loader.load()
