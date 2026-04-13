@@ -25,8 +25,9 @@ class GraphRetriever:
 			for entity in entity_list:
 				neighbors = self.graph_store.get_neighbors(entity, hops=hops)
 				for n in neighbors:
-					if n.get('chunk_id'):
-						chunk_ids.add(n['chunk_id'])
+					chunk_id = n.get('chunk_id')
+					if chunk_id is not None:
+						chunk_ids.add(chunk_id)
 		return list(chunk_ids)
 
 	async def retrieve_async(self, query, hops=2):

@@ -17,20 +17,40 @@ class HybridRetriever:
         vector_results, graph_chunk_ids = await asyncio.gather(vector_task, graph_task)
 
         # Merge and deduplicate by chunk_id
-        chunk_id_to_text = {}
-        for text, chunk_id in vector_results:
-            chunk_id_to_text[chunk_id] = text
+        chunk_id_to_data = {}
+        for item in vector_results:
+            chunk_id_to_data[item["chunk_id"]] = {
+                "chunk": item["chunk"],
+                "metadata": item.get("metadata"),
+            }
+
         for chunk_id in graph_chunk_ids:
-            if chunk_id not in chunk_id_to_text:
+            if chunk_id not in chunk_id_to_data:
                 # Fetch text for chunk_id from vector store
                 text = self.vector_retriever.get_chunk_text(chunk_id)
-                chunk_id_to_text[chunk_id] = text
+                if text:
+                    chunk_id_to_data[chunk_id] = {"chunk": text, "metadata": None}
 
-        candidates = list(chunk_id_to_text.items())
+        candidates = [
+            (chunk_id, data["chunk"], data.get("metadata"))
+            for chunk_id, data in chunk_id_to_data.items()
+            if data.get("chunk")
+        ]
+        if not candidates:
+            return []
+
         # Rerank with CrossEncoder
-        pairs = [(query, text) for _, text in candidates]
+        pairs = [(query, text) for _, text, _ in candidates]
         scores = self.cross_encoder.predict(pairs)
         reranked = sorted(zip(candidates, scores), key=lambda x: x[1], reverse=True)
         top = reranked[:top_k]
-        # Return [(text, chunk_id, score)]
-        return [(c[0][1], c[0][0], c[1]) for c in top]
+        # Return dicts for consistent API serialization
+        return [
+            {
+                "chunk_id": item[0][0],
+                "chunk": item[0][1],
+                "metadata": item[0][2],
+                "score": float(item[1]),
+            }
+            for item in top
+        ]

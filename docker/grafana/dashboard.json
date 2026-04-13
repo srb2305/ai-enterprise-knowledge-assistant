@@ -1,0 +1,18 @@
+{
+  "title": "GraphRAG Overview",
+  "timezone": "browser",
+  "panels": [
+    {
+      "type": "text",
+      "title": "GraphRAG Dashboard",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 4 },
+      "options": {
+        "content": "Connect Prometheus datasource and add query/rerank/correction metrics panels.",
+        "mode": "markdown"
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s"
+}

@@ -1,1 +1,14 @@
-[]
+[
+	{
+		"question": "Who are the main organizations mentioned in the documents?",
+		"ground_truth": "The answer should mention key organizations found in the ingested corpus.",
+		"answer": "",
+		"contexts": []
+	},
+	{
+		"question": "What compliance risks are linked to vendors in the documents?",
+		"ground_truth": "The answer should identify vendor-related compliance risks if present.",
+		"answer": "",
+		"contexts": []
+	}
+]

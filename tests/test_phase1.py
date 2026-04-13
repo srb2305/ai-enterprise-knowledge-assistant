@@ -28,7 +28,14 @@ def test_ingest_and_chunk():
 
 def test_vector_upsert_and_query(vector_store):
     chunks = ["John Doe works at Acme Corp.", "Jane Smith joined in 2020."]
-    vector_store.upsert_chunks(chunks)
+    ids = vector_store.upsert_chunks(chunks)
+    assert isinstance(ids, list)
+    assert len(ids) == 2
     results = vector_store.query("Who works at Acme Corp?", top_k=2)
     assert isinstance(results, list)
-    assert any("Acme Corp" in r[0] for r in results)
+    # results are now dicts with chunk_id, chunk, score, metadata
+    for r in results:
+        assert "chunk" in r
+        assert "chunk_id" in r
+        assert "score" in r
+    assert any("Acme Corp" in r["chunk"] for r in results)

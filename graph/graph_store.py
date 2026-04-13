@@ -46,7 +46,7 @@ class GraphStore:
 			result = session.run(
 				f"""
 				MATCH (n:Entity {{name: $name}})-[*1..{hops}]-(m)
-				RETURN DISTINCT m.name, m.type, m.chunk_id
+				RETURN DISTINCT m.name AS name, m.type AS type, m.chunk_id AS chunk_id
 				""",
 				name=entity_name
 			)

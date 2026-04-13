@@ -1,4 +1,5 @@
 from typing import List
+import os
 import networkx as nx
 import matplotlib.pyplot as plt
 
@@ -8,7 +9,7 @@ import requests
 import pandas as pd
 import io
 
-API_URL = "http://localhost:8000"  # Adjust if running FastAPI elsewhere
+API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 st.title("Enterprise Knowledge Assistant (Hybrid GraphRAG)")
 
@@ -46,16 +47,55 @@ if uploaded_file is not None:
 
 st.header("2. Ask a Question")
 question = st.text_input("Enter your question:")
+query_mode = st.selectbox(
+	"Retrieval mode",
+	options=["vector", "hybrid", "self-correct"],
+	index=1,
+	help="vector: pgvector only, hybrid: vector+graph+rerank, self-correct: hybrid plus critique loop",
+)
+top_k = st.slider("Top K chunks", min_value=1, max_value=10, value=5)
+
 if st.button("Query") and question:
 	with st.spinner("Retrieving answer..."):
-		resp = requests.post(f"{API_URL}/query", data={"question": question})
+		if query_mode == "vector":
+			endpoint = "/query"
+			payload = {"question": question, "top_k": top_k}
+		elif query_mode == "hybrid":
+			endpoint = "/hybrid_query"
+			payload = {"question": question, "top_k": top_k}
+		else:
+			endpoint = "/self_correct_query"
+			payload = {"question": question, "top_k": top_k, "max_iterations": 2, "min_score": 0.7}
+
+		resp = requests.post(f"{API_URL}{endpoint}", data=payload)
 		if resp.ok:
-			results = resp.json().get("results", [])
+			data = resp.json()
+			results = data.get("results", [])
+
+			if query_mode == "self-correct":
+				st.subheader("Answer")
+				st.write(data.get("answer", ""))
+				st.caption(
+					f"Faithfulness: {data.get('faithfulness_score', 0):.2f} | "
+					f"Relevance: {data.get('relevance_score', 0):.2f} | "
+					f"Iterations: {data.get('iteration_count', 0)}"
+				)
+				if data.get("trace"):
+					with st.expander("Iteration Trace"):
+						st.json(data.get("trace"))
+
 			if results:
 				for idx, res in enumerate(results):
-					st.markdown(f"**Chunk {idx+1} (Score: {res['score']:.2f})**\n{res['chunk']}")
+					score = res.get("score")
+					header = f"**Chunk {idx+1}"
+					if score is not None:
+						header += f" (Score: {float(score):.2f})"
+					header += "**"
+					st.markdown(f"{header}\n{res.get('chunk', '')}")
 					if res.get("metadata"):
 						st.caption(str(res["metadata"]))
+					if res.get("chunk_id") is not None:
+						st.caption(f"chunk_id: {res['chunk_id']}")
 			else:
 				st.info("No results found.")
 		else:

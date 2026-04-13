@@ -6,13 +6,14 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 import os
 import tempfile
-from ingestion.pipeline import ingest_document
+from ingestion.pipeline import ingest_document, ingest_chunks_into_graph
 from retrieval.vector_retriever import VectorStore
 from retrieval.graph_retriever import GraphRetriever
 from graph.graph_store import GraphStore
 import glob
 import json
 from retrieval.hybrid_retriever import HybridRetriever
+from agent.pipeline import run_self_correction_pipeline
 
 # Update this with your actual PostgreSQL connection string
 PGVECTOR_URL = os.getenv("PGVECTOR_URL", "postgresql://postgres:postgres@localhost:5432/pgvector")
@@ -60,44 +61,76 @@ async def get_latest_eval():
 @app.post("/ingest")
 async def ingest(file: UploadFile = File(...)):
 	"""
-	Ingests an uploaded document: loads, chunks, embeds, and stores in pgvector.
+	Ingests an uploaded document: loads, chunks, stores vectors,
+	and writes entities/relations to graph.
 	"""
 	with tempfile.NamedTemporaryFile(delete=False) as tmp:
 		tmp.write(await file.read())
 		tmp_path = tmp.name
 	chunks = ingest_document(tmp_path)
-	vector_store.upsert_chunks(chunks)
+	chunk_ids = vector_store.upsert_chunks(chunks)
+	graph_summary = ingest_chunks_into_graph(chunks, chunk_ids, graph_store)
 	os.remove(tmp_path)
-	return {"status": "success", "num_chunks": len(chunks)}
+	return {
+		"status": "success",
+		"num_chunks": len(chunks),
+		"num_vector_rows": len(chunk_ids),
+		"graph": graph_summary,
+	}
 
 @app.post("/query")
-async def query(question: str = Form(...)):
+async def query(question: str = Form(...), top_k: int = Form(5)):
 	"""
 	Answers a user query by retrieving top-k relevant chunks from pgvector.
 	"""
-	results = vector_store.query(question)
-	return JSONResponse({"results": [
-		{"chunk": chunk, "score": score, "metadata": metadata}
-		for chunk, score, metadata in results
-	]})
+	results = vector_store.query(question, top_k=top_k)
+	return JSONResponse({"results": results})
 
 @app.post("/graph_query")
 async def graph_query(question: str = Form(...)):
-    """
-    Answers a user query by retrieving relevant chunk IDs from the graph.
-    """
-    chunk_ids = graph_retriever.retrieve(question)
-    return JSONResponse({"chunk_ids": chunk_ids})
+	"""
+	Answers a user query by retrieving relevant chunk IDs from the graph
+	and fetching corresponding chunks from pgvector.
+	"""
+	chunk_ids = graph_retriever.retrieve(question)
+	results = vector_store.get_chunks_by_ids(chunk_ids) if chunk_ids else []
+	return JSONResponse({"chunk_ids": chunk_ids, "results": results})
 
 @app.post("/hybrid_query")
 async def hybrid_query(question: str = Form(...), top_k: int = Form(5)):
-    """
-    Answers a user query using hybrid retrieval (vector + graph + rerank).
-    """
-    results = await hybrid_retriever.retrieve(question, top_k=top_k)
-    return JSONResponse({
-        "results": [
-            {"chunk": chunk, "chunk_id": chunk_id, "score": float(score)}
-            for chunk, chunk_id, score in results
-        ]
-    })
+	"""
+	Answers a user query using hybrid retrieval (vector + graph + rerank).
+	"""
+	results = await hybrid_retriever.retrieve(question, top_k=top_k)
+	return JSONResponse({"results": results})
+
+
+@app.post("/self_correct_query")
+async def self_correct_query(
+	question: str = Form(...),
+	top_k: int = Form(5),
+	hops: int = Form(2),
+	max_iterations: int = Form(2),
+	min_score: float = Form(0.7),
+):
+	"""
+	Answers a user query using the retrieve -> generate -> critique loop.
+	"""
+	state = await run_self_correction_pipeline(
+		query=question,
+		max_iterations=max_iterations,
+		min_score=min_score,
+		top_k=top_k,
+		hops=hops,
+		log_results=True,
+	)
+	return JSONResponse(
+		{
+			"answer": state.answer,
+			"faithfulness_score": state.faithfulness_score,
+			"relevance_score": state.relevance_score,
+			"iteration_count": state.iteration_count,
+			"trace": state.trace,
+			"results": state.sources,
+		}
+	)
